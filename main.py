@@ -1,166 +1,135 @@
 import sqlite3
+import tkinter as tk
+from tkinter import messagebox, simpledialog, ttk
 
-# Connect to SQLite database (it will create one if it doesn't exist)
-try:
-    conn = sqlite3.connect('employee_directory.db')
-    cursor = conn.cursor()
-except sqlite3.Error as e:
-    print(f"Error connecting to database: {e}")
+# Connect to SQLite database
+conn = sqlite3.connect('employee_directory.db')
+cursor = conn.cursor()
 
 # Create the employees table
-try:
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS employees (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            department TEXT NOT NULL,
-            position TEXT NOT NULL,
-            salary REAL NOT NULL
-        )
-    ''')
-    conn.commit()
-except sqlite3.Error as e:
-    print(f"Error creating table: {e}")
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS employees (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        department TEXT NOT NULL,
+        position TEXT NOT NULL,
+        salary REAL NOT NULL
+    )
+''')
+conn.commit()
 
+# GUI setup
+root = tk.Tk()
+root.title("Employee Directory")
+root.geometry("600x400")
+root.configure(bg="#f0f4f8")  # Light background color
+
+# Set style
+style = ttk.Style()
+style.configure("Treeview", font=("Arial", 10), background="#e0ebf0", foreground="#2d2d2d")
+style.configure("Treeview.Heading", font=("Arial", 12, "bold"), background="#37474f", foreground="white")
+style.map("Treeview", background=[("selected", "#b0bec5")])
+style.configure("TButton", font=("Arial", 10, "bold"), background="#4caf50", foreground="white", padding=6)
+style.map("TButton", background=[("active", "#66bb6a")])
 
 # Function to add a new employee
-def add_employee(name, department, position, salary):
+def add_employee():
+    name = simpledialog.askstring("Add Employee", "Enter employee name:")
+    department = simpledialog.askstring("Add Employee", "Enter department:")
+    position = simpledialog.askstring("Add Employee", "Enter position:")
     try:
+        salary = float(simpledialog.askstring("Add Employee", "Enter salary:"))
         cursor.execute('''
             INSERT INTO employees (name, department, position, salary)
             VALUES (?, ?, ?, ?)
         ''', (name, department, position, salary))
         conn.commit()
-        print(f"Employee '{name}' added successfully.")
-    except sqlite3.Error as e:
-        print(f"Error adding employee: {e}")
-
+        messagebox.showinfo("Success", f"Employee '{name}' added successfully.")
+        display_employees()
+    except ValueError:
+        messagebox.showerror("Input Error", "Invalid input for salary.")
 
 # Function to update an employee's details
-def update_employee(employee_id, name=None, department=None, position=None, salary=None):
+def update_employee():
     try:
-        employee = cursor.execute('SELECT * FROM employees WHERE id = ?', (employee_id,)).fetchone()
-        if employee:
-            cursor.execute('''
-                UPDATE employees
-                SET name = COALESCE(?, name),
-                    department = COALESCE(?, department),
-                    position = COALESCE(?, position),
-                    salary = COALESCE(?, salary)
-                WHERE id = ?
-            ''', (name, department, position, salary, employee_id))
-            conn.commit()
-            print(f"Employee with ID {employee_id} updated successfully.")
-        else:
-            print(f"Employee with ID {employee_id} not found.")
-    except sqlite3.Error as e:
-        print(f"Error updating employee: {e}")
+        employee_id = int(simpledialog.askstring("Update Employee", "Enter employee ID to update:"))
+        name = simpledialog.askstring("Update Employee", "Enter new name (or leave blank to skip):")
+        department = simpledialog.askstring("Update Employee", "Enter new department (or leave blank to skip):")
+        position = simpledialog.askstring("Update Employee", "Enter new position (or leave blank to skip):")
+        salary_input = simpledialog.askstring("Update Employee", "Enter new salary (or leave blank to skip):")
+        salary = float(salary_input) if salary_input else None
 
+        cursor.execute('''
+            UPDATE employees
+            SET name = COALESCE(?, name),
+                department = COALESCE(?, department),
+                position = COALESCE(?, position),
+                salary = COALESCE(?, salary)
+            WHERE id = ?
+        ''', (name or None, department or None, position or None, salary, employee_id))
+        conn.commit()
+        messagebox.showinfo("Success", f"Employee with ID {employee_id} updated successfully.")
+        display_employees()
+    except ValueError:
+        messagebox.showerror("Input Error", "Invalid input for ID or salary.")
 
 # Function to delete an employee by ID
-def delete_employee(employee_id):
+def delete_employee():
     try:
+        employee_id = int(simpledialog.askstring("Delete Employee", "Enter employee ID to delete:"))
         cursor.execute('DELETE FROM employees WHERE id = ?', (employee_id,))
         conn.commit()
-        print(f"Employee with ID {employee_id} deleted successfully.")
-    except sqlite3.Error as e:
-        print(f"Error deleting employee: {e}")
+        messagebox.showinfo("Success", f"Employee with ID {employee_id} deleted successfully.")
+        display_employees()
+    except ValueError:
+        messagebox.showerror("Input Error", "Invalid input for employee ID.")
 
+# Function to search employees
+def search_employees():
+    keyword = simpledialog.askstring("Search Employees", "Enter search keyword (name, department, or position):")
+    cursor.execute('''
+        SELECT * FROM employees
+        WHERE name LIKE ? OR department LIKE ? OR position LIKE ?
+    ''', (f'%{keyword}%', f'%{keyword}%', f'%{keyword}%'))
+    results = cursor.fetchall()
+    display_employees(results)
 
-# Function to search employees by name, department, or position
-def search_employees(keyword):
-    try:
-        cursor.execute('''
-            SELECT * FROM employees
-            WHERE name LIKE ? OR department LIKE ? OR position LIKE ?
-        ''', (f'%{keyword}%', f'%{keyword}%', f'%{keyword}%'))
-        results = cursor.fetchall()
-        if results:
-            print("Search Results:")
-            for emp in results:
-                print(f"ID: {emp[0]}, Name: {emp[1]}, Department: {emp[2]}, Position: {emp[3]}, Salary: {emp[4]}")
-        else:
-            print("No employees found with that search keyword.")
-    except sqlite3.Error as e:
-        print(f"Error searching employees: {e}")
-
-
-# Function to display all employees
-def display_employees():
-    try:
+# Function to display employees in the table
+def display_employees(records=None):
+    for row in tree.get_children():
+        tree.delete(row)
+    if records is None:
         cursor.execute('SELECT * FROM employees')
-        employees = cursor.fetchall()
-        if employees:
-            print("Employee Directory:")
-            for emp in employees:
-                print(f"ID: {emp[0]}, Name: {emp[1]}, Department: {emp[2]}, Position: {emp[3]}, Salary: {emp[4]}")
-        else:
-            print("No employees in the directory.")
-    except sqlite3.Error as e:
-        print(f"Error displaying employees: {e}")
+        records = cursor.fetchall()
+    for emp in records:
+        tree.insert('', 'end', values=(emp[0], emp[1], emp[2], emp[3], emp[4]))
 
+# GUI Components
+frame = tk.Frame(root, bg="#f0f4f8")
+frame.pack(pady=10)
 
-# Main menu for user interaction
-def main_menu():
-    while True:
-        print("\nEmployee Directory Menu")
-        print("1. Add Employee")
-        print("2. Update Employee")
-        print("3. Delete Employee")
-        print("4. Search Employees")
-        print("5. Display All Employees")
-        print("6. Exit")
+# Employee Treeview
+columns = ("ID", "Name", "Department", "Position", "Salary")
+tree = ttk.Treeview(frame, columns=columns, show="headings")
+for col in columns:
+    tree.heading(col, text=col)
+tree.pack(fill="both", expand=True)
 
-        choice = input("Enter your choice (1-6): ")
+# Buttons for CRUD operations
+button_frame = tk.Frame(root, bg="#f0f4f8")
+button_frame.pack(pady=10)
 
-        if choice == '1':
-            try:
-                name = input("Enter employee name: ")
-                department = input("Enter department: ")
-                position = input("Enter position: ")
-                salary = float(input("Enter salary: "))
-                add_employee(name, department, position, salary)
-            except ValueError:
-                print("Invalid input for salary. Please enter a number.")
+tk.Button(button_frame, text="Add Employee", command=add_employee, bg="#4caf50", fg="white", font=("Arial", 10, "bold")).grid(row=0, column=0, padx=5)
+tk.Button(button_frame, text="Update Employee", command=update_employee, bg="#ffa726", fg="white", font=("Arial", 10, "bold")).grid(row=0, column=1, padx=5)
+tk.Button(button_frame, text="Delete Employee", command=delete_employee, bg="#ef5350", fg="white", font=("Arial", 10, "bold")).grid(row=0, column=2, padx=5)
+tk.Button(button_frame, text="Search Employees", command=search_employees, bg="#29b6f6", fg="white", font=("Arial", 10, "bold")).grid(row=0, column=3, padx=5)
+tk.Button(button_frame, text="Display All Employees", command=lambda: display_employees(), bg="#8e24aa", fg="white", font=("Arial", 10, "bold")).grid(row=0, column=4, padx=5)
 
-        elif choice == '2':
-            try:
-                employee_id = int(input("Enter employee ID to update: "))
-                name = input("Enter new name (or leave blank to skip): ")
-                department = input("Enter new department (or leave blank to skip): ")
-                position = input("Enter new position (or leave blank to skip): ")
-                salary_input = input("Enter new salary (or leave blank to skip): ")
-                salary = float(salary_input) if salary_input else None
-                update_employee(employee_id, name or None, department or None, position or None, salary)
-            except ValueError:
-                print("Invalid input. Please enter valid data for ID and salary.")
+# Load and display all employees when the program starts
+display_employees()
 
-        elif choice == '3':
-            try:
-                employee_id = int(input("Enter employee ID to delete: "))
-                delete_employee(employee_id)
-            except ValueError:
-                print("Invalid input for employee ID. Please enter a valid number.")
+# Run the main loop
+root.mainloop()
 
-        elif choice == '4':
-            keyword = input("Enter search keyword (name, department, or position): ")
-            search_employees(keyword)
-
-        elif choice == '5':
-            display_employees()
-
-        elif choice == '6':
-            print("Exiting the program.")
-            break
-
-        else:
-            print("Invalid choice. Please try again.")
-
-
-# Run the main menu
-try:
-    main_menu()
-except Exception as e:
-    print(f"An unexpected error occurred: {e}")
-finally:
-    conn.close()
+# Close the database connection on program exit
+conn.close()
